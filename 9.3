@@ -1,0 +1,217 @@
+// --------------------------------------------------------------
+// Part (c): Transaction Management Using Spring and Hibernate
+// --------------------------------------------------------------
+// Demonstration of transferring money between accounts with
+// Spring @Transactional and Hibernate ORM integration.
+// --------------------------------------------------------------
+
+import org.springframework.context.annotation.*;
+import org.springframework.stereotype.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.orm.hibernate5.LocalSessionFactoryBean;
+import org.springframework.orm.hibernate5.HibernateTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.annotation.Transactional;
+import org.hibernate.SessionFactory;
+import org.hibernate.Session;
+import javax.persistence.*;
+import java.util.*;
+
+// --------------------------------------------------------------
+// ENTITY: Account
+// --------------------------------------------------------------
+@Entity
+@Table(name = "accounts")
+class Account {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;
+
+    @Column(name = "holder_name")
+    private String holderName;
+
+    @Column(name = "balance")
+    private double balance;
+
+    public Account() {}
+    public Account(String holderName, double balance) {
+        this.holderName = holderName;
+        this.balance = balance;
+    }
+
+    public int getId() { return id; }
+    public String getHolderName() { return holderName; }
+    public void setHolderName(String holderName) { this.holderName = holderName; }
+    public double getBalance() { return balance; }
+    public void setBalance(double balance) { this.balance = balance; }
+
+    @Override
+    public String toString() {
+        return "Account [ID=" + id + ", Holder=" + holderName + ", Balance=" + balance + "]";
+    }
+}
+
+// --------------------------------------------------------------
+// ENTITY: TransactionRecord
+// --------------------------------------------------------------
+@Entity
+@Table(name = "transactions")
+class TransactionRecord {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;
+
+    private int fromAccountId;
+    private int toAccountId;
+    private double amount;
+    private Date date;
+
+    public TransactionRecord() {}
+    public TransactionRecord(int fromAccountId, int toAccountId, double amount, Date date) {
+        this.fromAccountId = fromAccountId;
+        this.toAccountId = toAccountId;
+        this.amount = amount;
+        this.date = date;
+    }
+
+    @Override
+    public String toString() {
+        return "Transaction [ID=" + id + ", From=" + fromAccountId +
+               ", To=" + toAccountId + ", Amount=" + amount + "]";
+    }
+}
+
+// --------------------------------------------------------------
+// DAO Layer - AccountDAO
+// --------------------------------------------------------------
+@Repository
+class AccountDAO {
+
+    @Autowired
+    private SessionFactory sessionFactory;
+
+    public Account getAccountById(int id) {
+        return sessionFactory.getCurrentSession().get(Account.class, id);
+    }
+
+    public void updateAccount(Account account) {
+        sessionFactory.getCurrentSession().update(account);
+    }
+
+    public void saveAccount(Account account) {
+        sessionFactory.getCurrentSession().save(account);
+    }
+}
+
+// --------------------------------------------------------------
+// SERVICE Layer - BankService
+// --------------------------------------------------------------
+@Service
+class BankService {
+
+    @Autowired
+    private AccountDAO accountDAO;
+
+    @Autowired
+    private SessionFactory sessionFactory;
+
+    // Transactional ensures atomicity: either all DB updates succeed or all fail.
+    @Transactional
+    public void transferMoney(int fromId, int toId, double amount) {
+        Account fromAccount = accountDAO.getAccountById(fromId);
+        Account toAccount = accountDAO.getAccountById(toId);
+
+        if (fromAccount == null || toAccount == null) {
+            throw new RuntimeException("One or both accounts not found!");
+        }
+
+        if (fromAccount.getBalance() < amount) {
+            throw new RuntimeException("Insufficient Balance in account ID: " + fromId);
+        }
+
+        // Deduct and add balance
+        fromAccount.setBalance(fromAccount.getBalance() - amount);
+        toAccount.setBalance(toAccount.getBalance() + amount);
+
+        accountDAO.updateAccount(fromAccount);
+        accountDAO.updateAccount(toAccount);
+
+        // Save transaction record
+        TransactionRecord record = new TransactionRecord(fromId, toId, amount, new Date());
+        sessionFactory.getCurrentSession().save(record);
+
+        System.out.println("✅ Transaction Successful: " + record);
+    }
+}
+
+// --------------------------------------------------------------
+// SPRING CONFIGURATION CLASS
+// --------------------------------------------------------------
+@Configuration
+@ComponentScan(basePackages = "com.example.bank")
+@EnableTransactionManagement
+class AppConfig {
+
+    @Bean
+    public LocalSessionFactoryBean sessionFactory() {
+        LocalSessionFactoryBean factoryBean = new LocalSessionFactoryBean();
+        Properties props = new Properties();
+
+        // Database connection properties
+        props.put("hibernate.connection.driver_class", "com.mysql.cj.jdbc.Driver");
+        props.put("hibernate.connection.url", "jdbc:mysql://localhost:3306/bankdb");
+        props.put("hibernate.connection.username", "root");
+        props.put("hibernate.connection.password", "your_password");
+
+        // Hibernate settings
+        props.put("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
+        props.put("hibernate.hbm2ddl.auto", "update");
+        props.put("hibernate.show_sql", "true");
+
+        factoryBean.setHibernateProperties(props);
+        factoryBean.setAnnotatedClasses(Account.class, TransactionRecord.class);
+
+        return factoryBean;
+    }
+
+    @Bean
+    public HibernateTransactionManager transactionManager(SessionFactory sessionFactory) {
+        HibernateTransactionManager txManager = new HibernateTransactionManager();
+        txManager.setSessionFactory(sessionFactory);
+        return txManager;
+    }
+}
+
+// --------------------------------------------------------------
+// MAIN CLASS
+// --------------------------------------------------------------
+public class TransactionManagementDemo {
+
+    public static void main(String[] args) {
+        AnnotationConfigApplicationContext context =
+                new AnnotationConfigApplicationContext(AppConfig.class);
+
+        BankService bankService = context.getBean(BankService.class);
+        SessionFactory factory = context.getBean(SessionFactory.class);
+        Session session = factory.openSession();
+
+        // Creating two test accounts (only run once)
+        session.beginTransaction();
+        Account acc1 = new Account("Simran", 10000);
+        Account acc2 = new Account("Shivam", 5000);
+        session.save(acc1);
+        session.save(acc2);
+        session.getTransaction().commit();
+
+        // Performing transfer
+        System.out.println("\n--- Initiating Transaction ---");
+        bankService.transferMoney(1, 2, 2000);
+
+        System.out.println("\n--- Transaction Completed Successfully ---");
+
+        context.close();
+        session.close();
+    }
+}
