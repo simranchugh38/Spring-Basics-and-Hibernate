@@ -1,0 +1,78 @@
+// ------------------------------------------
+// Part (a): Dependency Injection in Spring Using Java-Based Configuration
+// ------------------------------------------
+
+import org.springframework.context.annotation.*;
+
+// ------------------------------------------
+// Class 1: Course (Dependency Class)
+// ------------------------------------------
+class Course {
+    private String courseName;
+
+    // Constructor
+    public Course(String courseName) {
+        this.courseName = courseName;
+    }
+
+    // Method to display course info
+    public void displayCourse() {
+        System.out.println("Enrolled in course: " + courseName);
+    }
+}
+
+// ------------------------------------------
+// Class 2: Student (Dependent Class)
+// ------------------------------------------
+class Student {
+    private Course course;
+
+    // Constructor-based Dependency Injection
+    public Student(Course course) {
+        this.course = course;
+    }
+
+    // Method to display student info
+    public void showDetails() {
+        System.out.println("Student details:");
+        course.displayCourse();
+    }
+}
+
+// ------------------------------------------
+// Configuration Class using Annotations
+// ------------------------------------------
+@Configuration
+class AppConfig {
+
+    // Bean for Course
+    @Bean
+    public Course courseBean() {
+        return new Course("Spring Framework");
+    }
+
+    // Bean for Student - injecting Course
+    @Bean
+    public Student studentBean() {
+        return new Student(courseBean());
+    }
+}
+
+// ------------------------------------------
+// Main Class: To Run the Application
+// ------------------------------------------
+public class DependencyInjectionDemo {
+    public static void main(String[] args) {
+        // Creating Spring container using Java-based configuration
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(AppConfig.class);
+
+        // Retrieving Student bean
+        Student student = context.getBean(Student.class);
+
+        // Calling method to verify dependency injection
+        student.showDetails();
+
+        // Closing context
+        context.close();
+    }
+}
